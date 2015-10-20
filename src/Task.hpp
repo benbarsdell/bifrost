@@ -149,7 +149,7 @@ public:
 	               size_t      size=0) const {
 		topic = _pipeline->name() + "." + _name + "." + topic;
 		metadata["__date__"]   = Value(get_current_utc_string());
-		metadata["__time__"]   = Value(get_current_clock_ns());
+		metadata["__time__"]   = Value((int64_t)get_current_clock_ns());
 		metadata["__period__"] = Value((int64_t)1000000000ll);
 		std::string s = topic + " " + Value(metadata).serialize();
 		_pipeline->broadcast_socket().send(s, !bool(data));

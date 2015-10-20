@@ -3,7 +3,8 @@
 
 #include <stdexcept>
 #include <iostream>
-#include <ctime>
+//#include <ctime>
+#include "time_portable.h" // For cross-platform clock_gettime
 
 // Note: Seconds must be the last thing in format
 inline std::string get_current_utc_string(std::string format="%Y-%m-%dT%H:%M:%S") {

@@ -19,7 +19,7 @@ INCLUDE   = -I$(CUDA_DIR)/include -I.
 LIB     += -ldl -lzmq $(CUDA_LIBS)
 
 OBJECTS ?= Pipeline.o Task.o
-HEADERS ?= *.hpp
+HEADERS ?= *.hpp *.h
 
 all: $(SO_NAME) $(BIN_DIR)/bifrost_launch
 

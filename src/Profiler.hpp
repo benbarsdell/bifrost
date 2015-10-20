@@ -14,7 +14,8 @@
 #ifdef PROFILER_USE_GETTIMEOFDAY
 #include <sys/time.h> // For gettimeofday(2)
 #else
-#include <time.h>     // For clock_gettime
+//#include <time.h>     // For clock_gettime
+#include "time_portable.h" // For cross-platform clock_gettime
 #endif
 
 #ifdef PROFILER_USE_NVTX
