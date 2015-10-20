@@ -50,9 +50,9 @@ private:
 		operator Object() const {
 			Object ret;
 			ret["name"]       = Value(name);
-			ret["begin_time"] = Value(begin_time);
-			ret["end_time"]   = Value(end_time);
-			ret["duration"]   = Value(end_time - begin_time);
+			ret["begin_time"] = Value((int64_t)begin_time);
+			ret["end_time"]   = Value((int64_t)end_time);
+			ret["duration"]   = Value((int64_t)(end_time - begin_time));
 			List child_values;
 			child_values.reserve(children.size());
 			for( ProfilerNode::const_iterator it=children.begin();
@@ -193,7 +193,7 @@ public:
 	}
 	Object export_object() const {
 		Object ret;
-		ret["period"]  = Value((time_type)PERIOD);
+		ret["period"]  = Value((int64_t)(time_type)PERIOD);
 		ret["profile"] = Value((Object)m_rootnode);
 		return ret;
 	}

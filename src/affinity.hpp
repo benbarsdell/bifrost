@@ -8,6 +8,7 @@
 
 // Note: Pass core_id = -1 to unbind
 inline int bind_to_core(int core_id, pthread_t tid=0) {
+#if __linux__
 	// Check for valid core_id
 	int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
 	if (core_id < -1 || core_id >= num_cores) {
@@ -33,4 +34,7 @@ inline int bind_to_core(int core_id, pthread_t tid=0) {
 	// Set affinity (note: non-portable)
 	return pthread_setaffinity_np(tid, sizeof(cpu_set_t), &cpuset);
 	//return sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset);
+#else
+#warning CPU core binding/affinity not supported on this OS
+#endif
 }

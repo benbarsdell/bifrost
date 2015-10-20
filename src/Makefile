@@ -10,8 +10,8 @@ SO_FILE   := $(LIB_NAME)$(SO_EXT).$(MAJOR).$(MINOR)
 SO_NAME   := $(LIB_DIR)/$(SO_FILE)
 CXX_FLAGS  = -g -Wall -O3 -std=c++11 -fPIC -fopenmp
 NVCC_FLAGS = -g -Xcompiler "-Wall -fPIC" -O3 -std=c++11
-CUDA_DIR  = /usr/local/cuda
-CUDA_LIBS = -L$(CUDA_DIR)/lib64 -lcudart
+CUDA_DIR  ?= /usr/local/cuda
+CUDA_LIBS ?= -L$(CUDA_DIR)/lib64 -lcudart
 INCLUDE   = -I$(CUDA_DIR)/include -I.
 #ZMQ_LIBS     ?= -lzmq.
 #LIB          ?= $(ZMQ_LIBS)
