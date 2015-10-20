@@ -24,7 +24,7 @@ FileWrite.so: FileWrite.o FileWrite.hpp $(BIFROST_LIB) $(BIFROST_HDR)
 	g++ -shared -o $@ -Wl,--version-script=$(VERSION_FILE),-soname,$@.1 $(CXX_FLAGS) $(INCLUDE) $<
 
 clean:
-	rm -f RecvUDP.so Depacketize.so
+	rm -f *.so
 	rm -f *.o
 .PHONY: clean
 

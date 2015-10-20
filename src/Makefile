@@ -26,7 +26,16 @@ all: $(SO_NAME) $(BIN_DIR)/bifrost_launch
 %.o: %.cpp %.hpp #Makefile
 	g++ -c -o $@ $(CXX_FLAGS) $(INCLUDE) $<
 
-$(SO_NAME): $(OBJECTS) $(HEADERS) Makefile
+$(LIB_DIR):
+	mkdir -p $@
+$(INC_DIR):
+	mkdir -p $@
+$(INC_DIR)/bifrost:
+	mkdir -p $@
+$(INC_DIR)/bifrost/cuda:
+	mkdir -p $@
+
+$(SO_NAME): $(OBJECTS) $(HEADERS) Makefile | $(LIB_DIR) $(INC_DIR) $(INC_DIR)/bifrost $(INC_DIR)/bifrost/cuda
 	g++ -shared -o $@ -Wl,-soname,$(LIB_NAME)$(SO_EXT).$(MAJOR) $(OBJECTS)
 	ln -s -f $(SO_NAME) $(LIB_DIR)/$(LIB_NAME)$(SO_EXT).$(MAJOR)
 	ln -s -f $(SO_NAME) $(LIB_DIR)/$(LIB_NAME)$(SO_EXT)
@@ -35,14 +44,15 @@ $(SO_NAME): $(OBJECTS) $(HEADERS) Makefile
 
 #-Wl,-unresolved-symbols=ignore-in-shared-libs
 
-$(BIN_DIR)/bifrost_launch: bifrost_launch.cpp Makefile
+$(BIN_DIR):
+	mkdir -p $@
+
+$(BIN_DIR)/bifrost_launch: bifrost_launch.cpp Makefile | $(BIN_DIR)
 	g++ -o $@ $(CXX_FLAGS) $(INCLUDE) $< -L$(HOME)/Dropbox/code/bifrost/lib -lbifrost $(LIB)
 
 clean:
-	rm -f $(BIN_DIR)/bifrost_launch
-	rm -f $(INC_DIR)/*.h*
-	rm -f $(INC_DIR)/bifrost/*.h*
-	rm -f $(INC_DIR)/bifrost/cuda/*.h*
-	rm -f $(LIB_DIR)/$(LIB_NAME)$(SO_EXT)*
+	rm -rf $(BIN_DIR)
+	rm -rf $(LIB_DIR)
+	rm -rf $(INC_DIR)
 	rm -f *.o
 .PHONY: clean

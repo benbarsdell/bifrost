@@ -12,8 +12,8 @@ std_plugins:
 clean:
 	$(MAKE) -C ./src clean
 	$(MAKE) -C ./plugins/std clean
-	rm -f doc/html/*
-	rm -f doc/latex/*
+	rm -rf doc/html/*
+	rm -rf doc/latex/*
 .PHONY: clean
 
 doc/html/index.html:
