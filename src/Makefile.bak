@@ -1,0 +1,111 @@
+
+#all: launch_pipeline PSRDADAReader.so LEDADequantize.so LEDARequantize.so LEDABeamformer.so LEDAWeightUpdate.so
+all: launch_pipeline RecvUDP.so LWAOV_Depacketize.so LWASV_Depacketize.so
+
+test-packet-rx-ring: test-packet-rx-ring.c
+	gcc -o test-packet-rx-ring test-packet-rx-ring.c
+
+lincap: lincap.c
+	gcc -o lincap lincap.c
+
+gpudp: gpudp.cpp
+	g++ -o gpudp -Wall -O3 -g gpudp.cpp -I.. -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -Wl,--no-as-needed -ldl -lpthread -lrt -lcudart_static
+
+rxtest: rxtest.c rxring.c
+	gcc -o rxtest -Wall -I. rxtest.c rxring.c
+
+mmsg_test: rx_mmsg.cpp
+	g++ -o mmsg_test -g -Wall -O3 rx_mmsg.cpp
+
+capturer: capturer.cpp
+	g++ -o capturer -g -Wall -O3 capturer.cpp -lrt
+
+test_RingBuffer: test_RingBuffer.cpp RingBuffer.hpp
+	g++ -o test_RingBuffer -std=c++11 -g -Wall -O3 test_RingBuffer.cpp -pthread
+test_RingBuffer2: test_RingBuffer2.cpp RingBuffer2.hpp
+	g++ -o test_RingBuffer2 -std=c++11 -g -Wall -O3 test_RingBuffer2.cpp -I/usr/local/cuda/include -pthread -L/usr/local/cuda/lib64 -lcudart
+
+test_Socket: test_Socket.cpp Socket.hpp
+	g++ -o test_Socket -g -Wall -O3 test_Socket.cpp
+
+test_StackMultiset: test_StackMultiset.cpp StackMultiset.hpp
+	g++ -o test_StackMultiset -g -Wall -O3 test_StackMultiset.cpp
+
+test_CUDAStream: test_CUDAStream.cpp CUDAStream.hpp
+	g++ -o test_CUDAStream -g -Wall -O3 -std=c++11 -I/usr/local/cuda/include test_CUDAStream.cpp -L/usr/local/cuda/lib64 -lcudart
+
+test_RecvUDP: test_RecvUDP.cpp RecvUDP.hpp ReorderPackets.hpp RingBuffer.hpp
+	g++ -o test_RecvUDP -g -Wall -O3 -std=c++11 test_RecvUDP.cpp -pthread
+
+test_picojson: test_picojson.cpp
+	g++ -o test_picojson -g -Wall -O3 test_picojson.cpp
+
+test_Pipeline: test_Pipeline.cpp Pipeline.o Task.o
+	g++ -o test_Pipeline -g -Wall -O3 -std=c++11 test_Pipeline.cpp Pipeline.o Task.o -pthread -ldl
+
+CXX_FLAGS  = -g -Wall -O3 -std=c++11 -fPIC -fopenmp
+NVCC_FLAGS = -g -Xcompiler "-Wall -fPIC" -O3 -std=c++11
+CUDA_DIR  = /usr/local/cuda
+CUDA_LIBS = -L$(CUDA_DIR)/lib64 -lcudart
+INCLUDE   = -I$(CUDA_DIR)/include -I.
+PSRDADA_DIR  ?= $(HOME)/psrdada/src
+PSRDADA_LIBS += -L$(PSRDADA_DIR)/src/.libs -L$(PSRDADA_DIR)/.libs $(PSRDADA_DIR)/.libs/libpsrdada.a #-lpsrdada
+CUBLAS_LIBS  ?= -lcublas
+ZMQ_LIBS     ?= -lzmq
+LIB          ?= $(ZMQ_LIBS)
+
+launch_pipeline: launch_pipeline.cpp Pipeline.o Task.o
+	g++ -o launch_pipeline -g -Wall -O3 -std=c++11 $(INCLUDE) launch_pipeline.cpp Pipeline.o Task.o -pthread -ldl $(LIB) $(CUDA_LIBS)
+
+RecvUDP.so: RecvUDP.cpp RecvUDP.hpp Pipeline.o Task.o
+	g++ -shared -o RecvUDP.so -Wl,--version-script=plugin.version,-soname,RecvUDP.so.1 $(CXX_FLAGS) $(INCLUDE) RecvUDP.cpp Pipeline.o Task.o $(LIB)
+
+SendUDP.so: SendUDP.cpp SendUDP.hpp Pipeline.o Task.o
+	g++ -shared -o SendUDP.so -Wl,--version-script=plugin.version,-soname,SendUDP.so.1 $(CXX_FLAGS) $(INCLUDE) SendUDP.cpp Pipeline.o Task.o $(LIB)
+
+Depacketize.so: Depacketize_create.cpp Depacketize.o Pipeline.o Task.o
+	g++ -shared -o Depacketize.so -fopenmp -Wl,--version-script=plugin.version,-soname,Depacketize.so.1 $(CXX_FLAGS) $(INCLUDE) Depacketize_create.cpp Depacketize.o Pipeline.o Task.o $(LIB)
+
+LWAOV_Depacketize.so: LWAOV_Depacketize.cpp Depacketize.o Pipeline.o Task.o
+	g++ -shared -o LWAOV_Depacketize.so -fopenmp -Wl,--version-script=plugin.version,-soname,LWAOV_Depacketize.so.1 $(CXX_FLAGS) $(INCLUDE) LWAOV_Depacketize.cpp Depacketize.o Pipeline.o Task.o $(LIB)
+
+LWASV_Depacketize.so: LWASV_Depacketize.cpp Depacketize.o Pipeline.o Task.o
+	g++ -shared -o LWASV_Depacketize.so -fopenmp -Wl,--version-script=plugin.version,-soname,LWASV_Depacketize.so.1 $(CXX_FLAGS) $(INCLUDE) LWASV_Depacketize.cpp Depacketize.o Pipeline.o Task.o $(LIB)
+
+PSRDADAReader.so: PSRDADAReader.cpp Pipeline.o Task.o
+	g++ -shared -o PSRDADAReader.so -Wl,--version-script=plugin.version,-soname,PSRDADAReader.so.1 $(CXX_FLAGS) $(INCLUDE) PSRDADAReader.cpp Pipeline.o Task.o $(LIB) $(PSRDADA_LIBS)
+
+LEDADequantize.so: LEDADequantize.cu Pipeline.o Task.o UnaryTransformTask.hpp
+	nvcc -c -o LEDADequantize.o $(NVCC_FLAGS) $(INCLUDE) LEDADequantize.cu
+	g++ -shared -o LEDADequantize.so -Wl,--version-script=plugin.version,-soname,LEDADequantize.so.1 LEDADequantize.o Pipeline.o Task.o $(LIB)
+
+LEDARequantize.so: LEDARequantize.cu Pipeline.o Task.o UnaryTransformTask.hpp
+	nvcc -c -o LEDARequantize.o $(NVCC_FLAGS) $(INCLUDE) LEDARequantize.cu
+	g++ -shared -o LEDARequantize.so -Wl,--version-script=plugin.version,-soname,LEDARequantize.so.1 LEDARequantize.o Pipeline.o Task.o $(LIB)
+
+LEDABeamformer.so: LEDABeamformer.cpp LEDABeamformer.hpp Pipeline.o Task.o
+	g++ -shared -o LEDABeamformer.so -Wl,--version-script=plugin.version,-soname,LEDABeamformer.so.1 $(CXX_FLAGS) $(INCLUDE) LEDABeamformer.cpp Pipeline.o Task.o $(LIB) $(CUDA_LIBS) $(CUBLAS_LIBS)
+
+LEDAWeightUpdate.so: LEDAWeightUpdate.cu LEDAWeightUpdate.hpp Pipeline.o Task.o
+	nvcc -c -o LEDAWeightUpdate.o $(NVCC_FLAGS) $(INCLUDE) LEDAWeightUpdate.cu
+	g++ -shared -o LEDAWeightUpdate.so -Wl,--version-script=plugin.version,-soname,LEDAWeightUpdate.so.1 LEDAWeightUpdate.o Pipeline.o Task.o $(LIB) $(CUDA_LIBS)
+
+Copy.so: Copy.cpp Copy.hpp Pipeline.o Task.o
+	g++ -c -o Copy.o $(CXX_FLAGS) $(INCLUDE) Copy.cpp
+	g++ -shared -o Copy.so -Wl,--version-script=plugin.version,-soname,Copy.so.1 Copy.o Pipeline.o Task.o $(LIB) $(CUDA_LIBS)
+
+pipeline.o: pipeline.cpp
+	g++ -c -o pipeline.o $(CXX_FLAGS) $(INCLUDE) pipeline.cpp
+
+%.o: %.cpp
+	g++ -c -o $@ $(CXX_FLAGS) $(INCLUDE) $<
+
+#%.so: %.cpp 
+
+test_utils: test_utils.cpp utils.hpp
+	g++ -o test_utils -Wall -O3 -std=c++11 test_utils.cpp
+
+ZMQ_HPP_INC ?= -I../../
+
+test_zmq_socket: test_zmq_socket.cpp
+	g++ -o test_zmq_socket -Wall -O3 $(ZMQ_HPP_INC) test_zmq_socket.cpp -lzmq

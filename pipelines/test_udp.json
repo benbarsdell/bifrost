@@ -1,0 +1,41 @@
+{
+	"__pipeline__": {
+		"__name__": "ADP-Pipeline",
+		"__tasks__": {
+			"PacketCapture": {
+				"__class__": "std/RecvUDP",
+				"#ncore":                  2,
+				"ncore":                  1,
+				"#address":           "eth1",
+				"#address":           "localhost",
+				"address":            "127.0.0.1",
+				"port":                8321,
+				"header_size":            8,
+				"payload_size_max":      16,
+				"gulp_size":            1
+			},
+			"Depacketize": {
+				"__class__": "std/Depacketize",
+				"__inputs__": {
+					"payloads": "PacketCapture.payloads",
+					"headers":  "PacketCapture.headers",
+					"sizes":    "PacketCapture.sizes",
+					"sources":  "PacketCapture.sources"
+				},
+				"gulp_size":           16,
+				"guarantee_reads":   true
+			},
+			"ToDisk": {
+				"__class__": "std/FileWrite",
+				"__inputs__": {
+					"#data": "PacketCapture.payloads",
+					"data": "Depacketize.data"
+				},
+				"gulp_size":              1,
+				"buffer_factor":        100,
+				"filename":       "out.dat",
+				"guarantee_reads":     true
+			}
+		}
+	}
+}

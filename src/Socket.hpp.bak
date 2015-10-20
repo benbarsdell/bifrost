@@ -1,0 +1,365 @@
+size_t            npacket,
+                          void*             header_buf,
+                          size_t const*     header_offsets,
+                          size_t const*     header_sizes,
+                          void*             payload_buf,
+                          size_t const*     payload_offsets,
+                          size_t const*     payload_sizes,
+                          sockaddr_storage* packet_addrs) {
+	mmsghdr hdr0 = {};
+	_msgs.resize(npacket, hdr0);
+	_iovecs.resize(npacket*2);
+	for( uint64_t m=0; m<npacket; ++m ) {
+		if( headers ) {
+			size_t header_size   = (header_offsets  ?
+			                        header_sizes[m] :
+			                        header_sizes[0]);
+			size_t header_offset = (header_offsets    ?
+			                        header_offsets[m] :
+			                        header_size*m);
+			_iovecs[m*2+0].iov_base = &((uint8_t*)header_buf)[header_offset];
+			_iovecs[m*2+0].iov_len  = header_size;
+		}
+		size_t payload_size   = (payload_offsets  ?
+		                         payload_sizes[m] :
+		                         payload_sizes[0]);
+		size_t payload_offset = (payload_offsets    ?
+		                         payload_offsets[m] :
+		                         payload_size*m);
+		_iovecs[m*2+1].iov_base = &((uint8_t*)payloads)[payload_offset];
+		_iovecs[m*2+1].iov_len  = payload_size;
+		if( headers ) {
+			_msgs[m].msg_hdr.msg_iov     = &_iovecs[m*2+0];
+			_msgs[m].msg_hdr.msg_iovlen  = 2;
+		}
+		else {
+			_msgs[m].msg_hdr.msg_iov     = &_iovecs[m*2+1];
+			_msgs[m].msg_hdr.msg_iovlen  = 1;
+		}
+		if( packet_addrs ) {
+			_msgs[m].msg_hdr.msg_name    = (void*)&packet_addrs[m];
+			_msgs[m].msg_hdr.msg_namelen = sizeof(*packet_addrs);
+		}
+	}
+}
+size_t Socket::recv_block(size_t            npacket,       // Max for UDP
+                          void*             header_buf,    // Can be NULL
+                          size_t const*     header_offsets,
+                          size_t const*     header_sizes,
+                          void*             payload_buf,
+                          size_t const*     payload_offsets,
+                          size_t const*     payload_sizes, // Max for UDP
+                          size_t*           packet_sizes,
+                          sockaddr_storage* packet_sources,
+                          double            timeout_secs) {
+	if( !(_mode == Socket::MODE_BOUND || _mode == Socket::MODE_CONNECTED) ) {
+		throw Socket::Error("Cannot receive; not bound or connected");
+	}
+	// WAR for BUG in recvmmsg timeout behaviour
+	if( timeout_secs > 0 ) {
+		timeval timeout;
+		timeout.tv_sec  = (int)timeout_secs;
+		timeout.tv_usec = (int)((timeout_secs - timeout.tv_sec)*1e6);
+		setsockopt(_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+	}
+	// TODO: Replacing MSG_WAITFORONE with 0 results in low CPU use instead of 100%
+	//         Probably add an option to the function call
+	//int flags = (timeout_secs == 0) ? MSG_DONTWAIT : MSG_WAITFORONE;
+	int flags = (timeout_secs == 0) ? MSG_DONTWAIT : 0;
+	mmsghdr hdr0 = {0};
+	uint64_t nmsg_buf = npacket;//block_size / packet_stride;
+	_msgs.resize(nmsg_buf, hdr0);
+	_iovecs.resize(nmsg_buf*2);
+	for( uint64_t m=0; m<nmsg_buf; ++m ) {
+		if( headers ) {
+			size_t header_size   = (header_offsets  ?
+			                        header_sizes[m] :
+			                        header_sizes[0]);
+			size_t header_offset = (header_offsets    ?
+			                        header_offsets[m] :
+			                        header_size*m);
+			_iovecs[m*2+0].iov_base = &((uint8_t*)header_buf)[header_offset];
+			_iovecs[m*2+0].iov_len  = header_size;
+		}
+		size_t payload_size   = (payload_offsets  ?
+		                         payload_sizes[m] :
+		                         payload_sizes[0]);
+		size_t payload_offset = (payload_offsets    ?
+		                         payload_offsets[m] :
+		                         payload_size*m);
+		_iovecs[m*2+1].iov_base = &((uint8_t*)payloads)[payload_offset];
+		_iovecs[m*2+1].iov_len  = payload_size;
+		if( headers ) {
+			_msgs[m].msg_hdr.msg_iov     = &_iovecs[m*2+0];
+			_msgs[m].msg_hdr.msg_iovlen  = 2;
+		}
+		else {
+			_msgs[m].msg_hdr.msg_iov     = &_iovecs[m*2+1];
+			_msgs[m].msg_hdr.msg_iovlen  = 1;
+		}
+		if( packet_sources ) {
+			_msgs[m].msg_hdr.msg_name    = (void*)&packet_sources[m];
+			_msgs[m].msg_hdr.msg_namelen = sizeof(*packet_sources);
+		}
+	}
+	ssize_t nmsg = recvmmsg(_fd, &_msgs[0], _msgs.size(), flags, 0);//timeout_ptr);
+	if( nmsg < 0 && (errno == EAGAIN || errno == EWOULDBLOCK ) ) {
+		nmsg = 0;
+	}
+	else {
+		check_error(nmsg, "receive messages");
+	}
+	_nrecv_bytes = 0;
+	if( packet_sizes ) {
+		for( ssize_t m=0; m<nmsg; ++m ) {
+			packet_sizes[m] = _msgs[m].msg_len;
+			_nrecv_bytes   += _msgs[m].msg_len;
+		}
+	}
+	
+	// TODO: Does this actually work?
+	// Check ancilliary data for dropped packet log (SO_RXQ_OVFL)
+	_ndropped = 0;
+	////if( ndropped && m == 0 ) {
+	//if( m == 0 ) { // TODO: Which header is the drop count written to?
+	for( ssize_t m=0; m<nmsg; ++m ) {
+		for( cmsghdr* cmsg = CMSG_FIRSTHDR(&_msgs[m].msg_hdr);
+		     cmsg != NULL;
+		     cmsg = CMSG_NXTHDR(&_msgs[m].msg_hdr, cmsg)) {
+			if( cmsg->cmsg_type == SO_RXQ_OVFL ) {
+				unsigned* uptr = reinterpret_cast<unsigned*>(CMSG_DATA(cmsg));
+				_ndropped += *uptr;
+				break;
+			}
+		}
+	}
+	
+	return nmsg;
+}
+size_t Socket::recv_packet(void*             header,
+                           size_t            header_size,
+                           void*             payload,
+                           size_t            payload_size,
+                           
+                           
+                           void*             buffer,
+                           size_t            buffer_size,
+                           size_t*           packet_size,
+                           sockaddr_storage* packet_source,
+                           double            timeout_secs) {
+	return this->recv_block(buffer, buffer_size, buffer_size,
+	                        packet_size, packet_source,
+	                        timeout_secs);
+}
+size_t Socket::send_block(size_t                  npacket,
+                          void const*             header_buf,
+                          size_t const*           header_offsets,
+                          size_t const*           header_sizes,
+                          //size_t                  header_stride,
+                          void const*             payload_buf,
+                          size_t const*           payload_offsets,
+                          size_t const*           payload_sizes,
+                          //size_t                  payload_stride,
+                          size_t const*           header_sizes,
+                          size_t const*           payload_sizes,
+                          sockaddr_storage const* packet_dests, // Not needed after connect()
+                          double                  timeout_secs) {
+	if( !(_mode == Socket::MODE_BOUND || _mode == Socket::MODE_CONNECTED) ) {
+		throw Socket::Error("Cannot send; not connected or listening");
+	}
+	if( timeout_secs > 0 ) {
+		timeval timeout;
+		timeout.tv_sec  = (int)timeout_secs;
+		timeout.tv_usec = (int)((timeout_secs - timeout.tv_sec)*1e6);
+		setsockopt(_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+	}
+	int flags = (timeout_secs == 0) ? MSG_DONTWAIT : 0;
+	mmsghdr hdr0 = {0};
+	uint64_t nmsg_buf = npacket;
+	_msgs.resize(nmsg_buf, hdr0);
+	_iovecs.resize(nmsg_buf*2);
+	for( uint64_t m=0; m<nmsg_buf; ++m ) {
+		if( headers ) {
+			_iovecs[m*2+0].iov_base = &const_cast<uint8_t*>(static_cast<uint8_t const*>(headers))[m*header_stride];
+			_iovecs[m*2+0].iov_len  = header_sizes[m];
+		}
+		_iovecs[m*2+1].iov_base = &const_cast<uint8_t*>(static_cast<uint8_t const*>(payloads))[m*payload_stride];
+		_iovecs[m*2+1].iov_len  = payload_sizes[m];
+		if( headers ) {
+			_msgs[m].msg_hdr.msg_iov     = &_iovecs[m*2+0];
+			_msgs[m].msg_hdr.msg_iovlen  = 2;
+		}
+		else {
+			_msgs[m].msg_hdr.msg_iov     = &_iovecs[m*2+1];
+			_msgs[m].msg_hdr.msg_iovlen  = 1;
+		}
+		if( packet_dests ) {
+			if( _mode == Socket::MODE_CONNECTED ) {
+				throw Socket::Error("packet_dests must be NULL for connected sockets");
+			}
+			_msgs[m].msg_hdr.msg_name    = (void*)&packet_dests[m];
+			_msgs[m].msg_hdr.msg_namelen = sizeof(*packet_dests);
+		}
+		else if( _mode == Socket::MODE_BOUND ) {
+			throw Socket::Error("packet_dests must be specified for bound sockets");
+		}
+	}
+	ssize_t nmsg = sendmmsg(_fd, &_msgs[0], _msgs.size(), flags);
+	if( nmsg < 0 && (errno == EAGAIN || errno == EWOULDBLOCK ) ) {
+		nmsg = 0;
+	}
+	else {
+		check_error(nmsg, "send messages");
+	}
+	return nmsg;
+}
+size_t Socket::send_packet(void const*             buffer,
+                           size_t                  packet_size,
+                           sockaddr_storage const* packet_dest, // Not needed after connect()
+                           double                  timeout_secs) {
+	return this->send_block(buffer, 1, packet_size,
+	                        &packet_size, packet_dest, timeout_secs);
+}
+void Socket::open(sa_family_t family) {
+	this->close();
+	_family = family;
+	check_error(_fd = ::socket(_family, _type, 0),
+	            "create socket");
+	this->set_default_options();
+}
+void Socket::set_default_options() {
+	// Increase socket buffer sizes for efficiency
+	this->set_option(SO_RCVBUF, DEFAULT_SOCK_BUF_SIZE);
+	this->set_option(SO_SNDBUF, DEFAULT_SOCK_BUF_SIZE);
+	this->set_option(SO_LINGER,
+	                 (struct linger){.l_onoff=1, .l_linger=DEFAULT_LINGER_SECS});
+	this->set_option(SO_RXQ_OVFL, 1); // Enable dropped packet logging
+}
+sockaddr_storage Socket::get_remote_address() /*const*/ {
+	if( _mode != Socket::MODE_CONNECTED ) {
+		throw Socket::Error("Not connected");
+	}
+	sockaddr_storage sas;
+	socklen_t size = sizeof(sas);
+	check_error(::getpeername(_fd, (sockaddr*)&sas, &size),
+	            "get peer address");
+	return sas;
+}
+sockaddr_storage Socket::get_local_address() /*const*/ {
+	if( _mode != Socket::MODE_CONNECTED &&
+	    _mode != Socket::MODE_BOUND ) {
+		throw Socket::Error("Not bound");
+	}
+	sockaddr_storage sas;
+	socklen_t size = sizeof(sas);
+	check_error(::getsockname(_fd, (sockaddr*)&sas, &size),
+	            "get socket address");
+	return sas;
+}
+void Socket::close() {
+	if( _fd >= 0 ) {
+		::close(_fd);
+		_fd     = -1;
+		_family = AF_UNSPEC;
+		_mode   = Socket::MODE_CLOSED;
+	}
+}
+// Similar to pton(), copies first found address into *address and returns 1
+//   on success, else 0.
+int Socket::addr_from_hostname(const char* hostname,
+                               sockaddr*   address,
+                               sa_family_t family,
+                               int         socktype) {
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family   = family;
+    hints.ai_socktype = socktype;
+    hints.ai_flags    = 0; // Any
+    hints.ai_protocol = 0; // Any
+    struct addrinfo* servinfo;
+	if( ::getaddrinfo(hostname, 0, &hints, &servinfo) != 0 ) {
+		return 0;
+	}
+	for( struct addrinfo* it=servinfo; it!=NULL; it=it->ai_next ) {
+		::memcpy(address, it->ai_addr, it->ai_addrlen);
+		break; // Return first address
+	}
+	::freeaddrinfo(servinfo);
+	return 1;
+}
+int Socket::addr_from_interface(const char* ifname,
+                                sockaddr*   address,
+                                sa_family_t family) {
+	ifaddrs* ifaddr;
+	if( ::getifaddrs(&ifaddr) == -1 ) {
+		return 0;
+	}
+	bool found = false;
+	for( ifaddrs* ifa=ifaddr; ifa!=NULL; ifa=ifa->ifa_next ) {
+		if( std::strcmp(ifa->ifa_name, ifname) != 0 ||
+		    ifa->ifa_addr == NULL ) {
+			continue;
+		}
+		sa_family_t ifa_family = ifa->ifa_addr->sa_family;
+		if( (family == AF_UNSPEC && (ifa_family == AF_INET ||
+		                             ifa_family == AF_INET6)) ||
+		    ifa_family == family ) {
+			size_t addr_size = ((ifa_family == AF_INET) ?
+			                    sizeof(struct sockaddr_in) :
+			                    sizeof(struct sockaddr_in6));
+			::memcpy(address, ifa->ifa_addr, addr_size);
+			found = true;
+			break; // Return first match
+		}
+	}
+	::freeifaddrs(ifaddr);
+	return found;
+}
+#if __cplusplus >= 201103L
+void Socket::replace(Socket& s) {
+	_fd          = s._fd; s._fd = -1;
+	_type        = std::move(s._type);
+	_family      = std::move(s._family);
+	_mode        = std::move(s._mode);
+	_ndropped    = std::move(s._ndropped);
+	_nrecv_bytes = std::move(s._nrecv_bytes);
+	_msgs        = std::move(s._msgs);
+	_iovecs      = std::move(s._iovecs);
+}
+#endif
+void Socket::swap(Socket& s) {
+	std::swap(_fd,          s._fd);
+	std::swap(_type,        s._type);
+	std::swap(_family,      s._family);
+	std::swap(_mode,        s._mode);
+	std::swap(_ndropped,    s._ndropped);
+	std::swap(_nrecv_bytes, s._nrecv_bytes);
+	std::swap(_msgs,        s._msgs);
+	std::swap(_iovecs,      s._iovecs);
+}
+Socket::Socket(int fd, ManageTag ) : _fd(fd) {
+	_type   = this->get_option<sock_type>(SO_TYPE);
+	_family = this->get_option<int>(SO_DOMAIN);
+	if( this->get_option<int>(SO_ACCEPTCONN) ) {
+		_mode = Socket::MODE_LISTENING;
+	}
+	else {
+		// Not listening
+		try {
+			_mode = Socket::MODE_CONNECTED;
+			this->get_remote_address();
+		}
+		catch( Socket::Error const& ) {
+			// Not connected
+			try {
+				_mode = Socket::MODE_BOUND;
+				this->get_local_address();
+			}
+			catch( Socket::Error const& ) {
+				// Not bound
+				_mode = Socket::MODE_CLOSED;
+			}
+		}
+	}
+	this->set_default_options();
+}

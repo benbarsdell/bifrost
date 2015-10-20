@@ -1,0 +1,48 @@
+
+LIB_DIR  ?= ../lib
+BIN_DIR  ?= ../bin
+INC_DIR  ?= ../include
+LIB_NAME ?= libbifrost
+SO_EXT   ?= .so
+MAJOR    ?= 1
+MINOR    ?= 0.0
+SO_FILE   := $(LIB_NAME)$(SO_EXT).$(MAJOR).$(MINOR)
+SO_NAME   := $(LIB_DIR)/$(SO_FILE)
+CXX_FLAGS  = -g -Wall -O3 -std=c++11 -fPIC -fopenmp
+NVCC_FLAGS = -g -Xcompiler "-Wall -fPIC" -O3 -std=c++11
+CUDA_DIR  = /usr/local/cuda
+CUDA_LIBS = -L$(CUDA_DIR)/lib64 -lcudart
+INCLUDE   = -I$(CUDA_DIR)/include -I.
+#ZMQ_LIBS     ?= -lzmq.
+#LIB          ?= $(ZMQ_LIBS)
+#ZMQ_LIB_DIR ?= /usr/local/lib
+LIB     += -ldl -lzmq $(CUDA_LIBS)
+
+OBJECTS ?= Pipeline.o Task.o
+HEADERS ?= *.hpp
+
+all: $(SO_NAME) $(BIN_DIR)/bifrost_launch
+
+%.o: %.cpp %.hpp #Makefile
+	g++ -c -o $@ $(CXX_FLAGS) $(INCLUDE) $<
+
+$(SO_NAME): $(OBJECTS) $(HEADERS) Makefile
+	g++ -shared -o $@ -Wl,-soname,$(LIB_NAME)$(SO_EXT).$(MAJOR) $(OBJECTS)
+	ln -s -f $(SO_NAME) $(LIB_DIR)/$(LIB_NAME)$(SO_EXT).$(MAJOR)
+	ln -s -f $(SO_NAME) $(LIB_DIR)/$(LIB_NAME)$(SO_EXT)
+	cp $(HEADERS) $(INC_DIR)/bifrost/
+	cp cuda/*.h* $(INC_DIR)/bifrost/cuda/
+
+#-Wl,-unresolved-symbols=ignore-in-shared-libs
+
+$(BIN_DIR)/bifrost_launch: bifrost_launch.cpp Makefile
+	g++ -o $@ $(CXX_FLAGS) $(INCLUDE) $< -L$(HOME)/Dropbox/code/bifrost/lib -lbifrost $(LIB)
+
+clean:
+	rm -f $(BIN_DIR)/bifrost_launch
+	rm -f $(INC_DIR)/*.h*
+	rm -f $(INC_DIR)/bifrost/*.h*
+	rm -f $(INC_DIR)/bifrost/cuda/*.h*
+	rm -f $(LIB_DIR)/$(LIB_NAME)$(SO_EXT)*
+	rm -f *.o
+.PHONY: clean

@@ -30,5 +30,5 @@ will build libbifrost.so, the bifrost_launch application and the standard plugin
 
 ## Contributors
 
-Ben Barsdell (gmail benbarsdell)
-Daniel Price (thetelegraphic.com dan)
+ * Ben Barsdell (gmail benbarsdell)
+ * Daniel Price (thetelegraphic.com dan)
