@@ -48,7 +48,7 @@ $(BIN_DIR):
 	mkdir -p $@
 
 $(BIN_DIR)/bifrost_launch: bifrost_launch.cpp Makefile | $(BIN_DIR)
-	g++ -o $@ $(CXX_FLAGS) $(INCLUDE) $< -L$(HOME)/Dropbox/code/bifrost/lib -lbifrost $(LIB)
+	g++ -o $@ $(CXX_FLAGS) $(INCLUDE) $< -L$(LIB_DIR) -lbifrost $(LIB)
 
 clean:
 	rm -rf $(BIN_DIR)
