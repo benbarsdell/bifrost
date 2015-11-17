@@ -36,5 +36,6 @@ inline int bind_to_core(int core_id, pthread_t tid=0) {
 	//return sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset);
 #else
 #warning CPU core binding/affinity not supported on this OS
+	return 0;
 #endif
 }

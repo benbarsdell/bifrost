@@ -3871,4 +3871,87 @@ private:
 		}
 		*/
 
+//data_output.request_size_bytes(0, _scatter_factor);
+	// HACK TODO: This is the only time this method is used. Find
+	//              another way; e.g., by somehow telling super_type
+	//              what input and output buffer factors to use.
+	//data_output.request_buffer_factor(_scatter_factor);
+	// ACTUALLY,
+
+
+enum {
+		TASK_LOG_EMERG   = 0, // system is unusable
+		TASK_LOG_ALERT   = 1, // action must be taken immediately
+		TASK_LOG_CRIT    = 2, // critical conditions
+		TASK_LOG_ERR     = 3, // error conditions
+		TASK_LOG_WARNING = 4, // warning conditions
+		TASK_LOG_NOTICE  = 5, // normal but significant condition
+		TASK_LOG_INFO    = 6, // informational
+		TASK_LOG_DEBUG   = 7, // debug-level messages
+		TASK_LOG_TRACE   = 8  // call-tracing messages
+	};
+	void vlog(std::string topic, std::string msg, va_list args) const {
+		// Note: Must lock due to use of _buffer
+		std::lock_guard<std::mutex> lock(_log_mutex);
+		int ret = vsnprintf(&_log_buffer[0], _log_buffer.capacity(),
+		                    msg.c_str(), args);
+		if( (size_t)ret >= _log_buffer.capacity() ) {
+			_log_buffer.resize(ret+1); // Note: +1 for NULL terminator
+			ret = vsnprintf(&_log_buffer[0], _log_buffer.capacity(),
+			                msg.c_str(), args);
+		}
+		_log_buffer.resize(ret+1); // Note: +1 for NULL terminator
+		if( ret < 0 ) {
+			// TODO: How to handle encoding error?
+		}
+		Object metadata; // Note: No metadata is used here
+		this->broadcast("log."+topic, metadata, &_log_buffer[0],
+		                _log_buffer.size());
+	}
+
+mutable std::mutex        _log_mutex;
+	mutable std::vector<char> _log_buffer;
+	int                       _log_verbosity;
+
+// Convenience methods for interruptable sleeps
+	//   Return false if sleep was interrupted by shutdown event
+	template<class Rep, class Period>
+	bool sleep_for(const std::chrono::duration<Rep,Period>& rel_time) const {
+		return !_shutdown.wait_for(rel_time);
+	}
+	template<class Clock, class Duration>
+	bool sleep_until(const std::chrono::time_point<Clock,Duration>& abs_time) const{
+		return !_shutdown.wait_until(abs_time);
+	}
+
+/*
+	template<typename T>
+	inline T const& get_property(std::string name) const {
+		return get_key<T>(_definition, name);
+	}
+	template<typename T>
+	inline T const& get_property(std::string name, T const& default_val) const {
+		return get_key(_definition, name, default_val);
+	}
+	*/
+
+
+void LWASV_Reorder::open() {
+	bool guarantee_reads = lookup_bool(params(), "guarantee_reads", false);
+	_input.open(guarantee_reads);
+	
+	// TODO: Just use cpu_cores.size() instead of separate ncore?
+	int ncore = lookup_integer(params(), "ncore", 1);
+	auto cpu_cores = lookup_list<int>(params(), "cpu_cores");
+	//ncore = std::min(ncore, (int)cpu_cores.size());
+	omp_set_num_threads(ncore);
+#pragma omp parallel for schedule(static)
+	for( int core=0; core<ncore; ++core ) {
+		if( core == 0 ) {
+			this->log().info("Using %i cores to process packets\n",
+			                 omp_get_num_threads());
+		}
+		bind_to_core(cpu_cores[core % cpu_cores.size()]);
+	}
+}
 

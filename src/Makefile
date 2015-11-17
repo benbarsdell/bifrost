@@ -11,6 +11,7 @@ SO_NAME   := $(LIB_DIR)/$(SO_FILE)
 CXX_FLAGS  = -g -Wall -O3 -std=c++11 -fPIC -fopenmp
 NVCC_FLAGS = -g -Xcompiler "-Wall -fPIC" -O3 -std=c++11
 CUDA_DIR  ?= /usr/local/cuda
+# TODO: Needs to be /lib on OSX
 CUDA_LIBS ?= -L$(CUDA_DIR)/lib64 -lcudart
 INCLUDE   = -I$(CUDA_DIR)/include -I.
 #ZMQ_LIBS     ?= -lzmq.

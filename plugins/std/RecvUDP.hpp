@@ -31,6 +31,7 @@ public:
 	};
 	RecvUDP(Pipeline*     pipeline,
 	        const Object* definition);
+  virtual void open();
 	virtual void init();
 	virtual void process();
 	virtual void shutdown();

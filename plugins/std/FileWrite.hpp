@@ -16,6 +16,7 @@ class FileWrite
 public:
 	FileWrite(Pipeline*     pipeline,
 	        const Object* definition);
+  virtual void open();
 	virtual void init();
 	virtual void process();
 private:

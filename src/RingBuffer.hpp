@@ -443,7 +443,7 @@ void RingBufferImpl<T,A,B,C>::close_write(offset_type offset, size_type size) {
 	unique_lock_type lock(_mutex);
 	this->_ghost_write(offset, size);
 	// TODO: Any way to support closing write blocks out of order?
-	//         Any need to?
+	//         Any need to? YES, see below.
 	//std::cout << offset << " vs. " << _head << std::endl;
 	//assert( offset == this->head() );
 	//*assert( offset == _head );
@@ -589,9 +589,10 @@ public:
 	//              "buffer_factor" as assumed by ConsumerTask.
 	//              A better solution might be to allow giving
 	//                input and output buffer factors to ConsumerTask.
-	void request_buffer_factor(size_type factor) {
-		this->request_size_frames(0, factor*_nframe);
-	}
+	//void request_buffer_factor(size_type factor) {
+	//	this->request_size_frames(0, factor*_nframe);
+	//}
+	
 	inline shape_type     frame_shape() const { return _frame_shape; }
 	inline size_type      frame_size()  const { return _frame_size; }
 	inline size_type      frame_bytes() const { return (frame_size() *
@@ -619,6 +620,9 @@ protected:
 		  _frame_size(frame_size),
 		  _frame_shape(frame_shape),
 		  _nframe(nframe) {}
+	
+	// This is used by RingWriteBlock to allow dynamically-sized writes
+	inline void set_nframe(size_type nframe) { _nframe = nframe; }
 private:
 	RingBuffer* _ring;
 	size_type   _frame_size;
@@ -662,6 +666,8 @@ public:
 	inline const_iterator end()    const { return _data + this->size(); }
 	inline reference       operator[](size_t n)       { return _data[n]; }
 	inline const_reference operator[](size_t n) const { return _data[n]; }
+	inline iterator        operator->()       { return _data; }
+	inline const_iterator  operator->() const { return _data; }
 	void swap(RingAccessor& other) {
 		super_type::swap(other);
 		std::swap(_data,   other._data);
@@ -690,7 +696,7 @@ public:
 	typedef typename super_type::size_type   size_type;
 	typedef typename super_type::pointer     pointer;
 	void open(bool guarantee_read=false) {
-		// Open the ealiest written data
+		// Open the earliest written data
 		assert( this->ring() );
 		_guaranteed = guarantee_read;
 		offset_type byte_offset;
@@ -701,6 +707,10 @@ public:
 		// TODO: Is alignment of the returned head byte offset wrt frame_bytes
 		//         here a concern?
 		this->set_frame0(byte_offset / (offset_type)this->frame_bytes());
+	}
+	void open_next(bool guarantee_read=false) {
+		// TODO: Merge this into plain open() by checking if frame0 is already set (somehow)
+		return this->open_at(this->frame0(), guarantee_read);
 	}
 	void open_at(offset_type frame_idx, bool guarantee_read=false) {
 		assert( this->ring() );
@@ -743,9 +753,11 @@ public:
 		if( this->begin() ) {
 			assert( this->ring() );
 			this->ring()->close_read(this->byte0(),
-			                   this->size_bytes(),
-			                   _guaranteed);
+			                         this->size_bytes(),
+			                         _guaranteed);
 			this->set_data(0);
+			// Advance frame offset to allow re-opening at the next data
+			this->set_frame0(this->frame0() + this->nframe());
 		}
 	}
 	RingReader() : super_type() {}
@@ -858,5 +870,14 @@ public:
 			this->ring()->close_write(byte_offset, this->size_bytes());
 			this->set_data(0);
 		}
+	}
+	// Allow users to write only part of the block
+	//using RingAccessorBase<T>::set_nframe;
+	inline void set_nframe(size_type nframe) {
+		if( nframe > this->nframe() ) {
+			throw std::invalid_argument("RingWriteBlock::set_nframe() "
+			                            "cannot increase nframe");
+		}
+		RingAccessorBase<T>::set_nframe(nframe);
 	}
 };

@@ -34,6 +34,7 @@
 Depacketize::Depacketize(Pipeline*     pipeline,
                          const Object* definition)
 	: super_type({"payloads","headers","sizes","sources"}, // inputs
+	             {}, // input shapes
 	             {"data"},                                 // outputs
 	             pipeline, definition) { 
 	auto input_space = this->get_input_ring("payloads")->space();
@@ -54,13 +55,11 @@ void Depacketize::init() {
 	                                 DEFAULT_FILL_CHAR);
 	
 	auto& data_output = this->get_output<0>();
-	//data_output.request_size_bytes(0, _scatter_factor);
-	// HACK TODO: This is the only time this method is used. Find
-	//              another way; e.g., by somehow telling super_type
-	//              what input and output buffer factors to use.
-	//data_output.request_buffer_factor(_scatter_factor);
-	// ACTUALLY, this task is a special case due to the inputs and output
-	//   not being in lock-step, so we need to request the size manually.
+	// Note: this task is a special case due to the inputs and output
+	//   not being in lock-step, so we need to request the size again manually.
+	// TODO: Allow specifying gulp_nframe instead
+	//       Allow specifying separate input vs. output gulp sizes?
+	//         ** Simply input/output_gulp_size and input/output_buffer_factor?
 	// Gulps specified by memory size upper limit
 	size_t gulp_size_min = lookup_integer(params(), "gulp_size",
 	                                      DEFAULT_GULP_SIZE_MIN);
@@ -81,7 +80,7 @@ void Depacketize::init() {
 	_stats["noverwritten_bytes"] = 0;
 	_stats["npending_bytes"]     = 0;
 	_stats["nmissing_bytes"]     = 0;
-	
+	/*
 	// TODO: Just use cpu_cores.size() instead of separate ncore?
 	int ncore = lookup_integer(params(), "ncore", 1);
 	auto cpu_cores = lookup_list<int>(params(), "cpu_cores", {});
@@ -90,14 +89,19 @@ void Depacketize::init() {
 #pragma omp parallel for schedule(static, 1)
 	for( int core=0; core<ncore; ++core ) {
 		if( core == 0 ) {
-			this->log_info("Using %i cores to process packets\n",
+			this->log().info("Using %i cores to process packets\n",
 			               omp_get_num_threads());
 		}
 		if( !cpu_cores.empty() ) {
 			bind_to_core(cpu_cores[core % cpu_cores.size()]);
 		}
 	}
+	//if( !cpu_cores.empty() ) {
+	//  bind_to_core(cpu_cores[0]);
+	//}
+	*/
 }
+
 // Default decoder (implements simplest possible case)
 void Depacketize::decode_packet(char const* header,
                                 size_type   packet_size,
@@ -238,6 +242,23 @@ void Depacketize::release_output_block() {
 	_data_output_blocks.pop_front();
 }
 void Depacketize::open() {
+  // TODO: Just use cpu_cores.size() instead of separate ncore?
+	int ncore = lookup_integer(params(), "ncore", 1);
+	auto cpu_cores = lookup_list<int>(params(), "cpu_cores", {});
+	//ncore = std::min(ncore, (int)cpu_cores.size());
+	omp_set_num_threads(ncore);
+#pragma omp parallel for schedule(static, 1)
+	for( int core=0; core<ncore; ++core ) {
+		if( core == 0 ) {
+			this->log().info("Using %i cores to process packets\n",
+			               omp_get_num_threads());
+		}
+		if( !cpu_cores.empty() ) {
+			bind_to_core(cpu_cores[core % cpu_cores.size()]);
+		}
+	}
+	bind_to_core(cpu_cores[0]);
+
 	super_type::open();
 	this->clear_output_blocks();
 	for( size_t b=0; b<_scatter_factor; ++b ) {
@@ -252,8 +273,8 @@ void Depacketize::process() {
 	auto const& addr_input  = this->get_input<3>();
 	ssize_t nframe_in = pyld_input.nframe();
 	
-	std::cout << "*** " << pyld_input.frame_size() << ", " << pyld_input.nframe() << std::endl;
-	std::cout << "*** " << data_output.frame_size() << ", " << data_output.nframe() << std::endl;
+	//std::cout << "*** " << pyld_input.frame_size() << ", " << pyld_input.nframe() << std::endl;
+	//std::cout << "*** " << data_output.frame_size() << ", " << data_output.nframe() << std::endl;
 	
 	_new_packet_sequence.clear();
 	
@@ -319,7 +340,7 @@ void Depacketize::process() {
 	stats_obj["reserve_head"] = Value(data_output.reserve_head());
 	stats_obj["tail"]         = Value(data_output.tail());
 	this->broadcast("stats", stats_obj);
-	std::cout << "Done broadcast" << std::endl;
+	//std::cout << "Done broadcast" << std::endl;
 }
 void Depacketize::overwritten() {
 	std::cout << this->name() << "::overwritten()" << std::endl;

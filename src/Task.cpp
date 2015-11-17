@@ -20,7 +20,7 @@ bool Task::input_ring_exists(std::string   input_name,
 
 Task::Task(Pipeline*         pipeline,
            const Object*     definition)
-	: _pipeline(pipeline), _definition(*definition) {
+	: _pipeline(pipeline), _definition(*definition), _log(this) {
 	
 	//_name = get_property<std::string>("__name__");
 	_name = lookup_string(params(), "__name__");
@@ -38,7 +38,9 @@ Task::Task(Pipeline*         pipeline,
 	//         excessive debug/trace logging. Having this setting allows
 	//         implementers to go crazy with logging without worrying about
 	//         performance issues.
-	_log_verbosity = TASK_LOG_INFO + lookup_integer(params(), "verbosity", 0);
+	//_log_verbosity = TASK_LOG_INFO + lookup_integer(params(), "verbosity", 0);
+	_log.set_verbosity(log_type::LOGGER_INFO +
+	                   lookup_integer(params(), "verbosity", 0));
 	
 	//for( auto const& kv : get_property("__inputs__", Object()) ) {
 	Object const& input_conns = lookup_object(params(), "__inputs__",
@@ -175,6 +177,7 @@ void Task::launch() {
 	  });*/
 }
 void Task::_launch() {
+	/* TODO: This breaks subsequent multi-threaded binding!
 	// Automatically bind the CPU core if specified
 	if( params().count("cpu_cores") ) {
 		std::vector<int> cpu_cores = lookup_list<int>(params(), "cpu_cores");
@@ -185,7 +188,7 @@ void Task::_launch() {
 			}
 		}
 	}
-	
+	*/
 	// Automatically set the GPU device if specified
 	if( params().count("gpu_devices") ) {
 		cudaError_t cuda_ret;
@@ -216,3 +219,10 @@ void Task::_launch() {
 	
 	this->main();
 }
+void Task::broadcast(std::string topic,
+                     Object      metadata,
+                     char const* data,
+                     size_t      size) const {
+	return _pipeline->broadcast(_name+"."+topic, metadata, data, size);
+}
+

@@ -3,10 +3,14 @@
   TODO: This contains a lot of messy stuff due mostly to lack of generic lambdas
  */
 
+#pragma once
+
 #include "Task.hpp"
 #include "utils.hpp"
 
 #include <tuple>
+
+typedef std::vector<size_t> shape_type;
 
 // TODO: Replace with generic lambdas in C++14
 // Note: These can't be in local scope due to this C++ limitation:
@@ -16,15 +20,23 @@ struct init_input {
 	Task*                           task;
 	InputsType&                     inputs;
 	std::vector<std::string> const& names;
+	std::vector<shape_type>  const& shapes;
 	init_input(Task* task_,
 	           InputsType& inputs_,
-	           std::vector<std::string> const& names_)
-		: task(task_), inputs(inputs_), names(names_) {}
+	           std::vector<std::string> const& names_,
+	           std::vector<shape_type>  const& shapes_)
+		: task(task_), inputs(inputs_), names(names_), shapes(shapes_) {}
 	template<typename StaticIndex>
 	void operator()(StaticIndex ) const {
-		std::string name = names[StaticIndex::value];
+		std::string name  =  names[StaticIndex::value];
 		//std::cout << "*** " << name << ", " << task->get_input_ring(name) << std::endl;
-		std::get<StaticIndex::value>(inputs).init(task->get_input_ring(name));
+		if( shapes.empty() || shapes[StaticIndex::value].empty() ) {
+			std::get<StaticIndex::value>(inputs).init(task->get_input_ring(name));
+		}
+		else {
+			std::get<StaticIndex::value>(inputs).init(task->get_input_ring(name),
+			                                          shapes[StaticIndex::value]);
+		}
 	}
 };
 template<typename OutputsType>
@@ -143,7 +155,7 @@ struct RequestPrimarySize<CT,false,true> {
 			// Gulps specified by memory size upper limit
 			size_t gulp_size_min = lookup_integer(task->params(), "gulp_size",
 			                                      CT::DEFAULT_GULP_SIZE_MIN);
-			//task->Task::log_info("gulp_size_min: %lu", gulp_size_min);
+			//task->Task::log().info("gulp_size_min: %lu", gulp_size_min);
 			//std::cout << "gulp_size_min: " << gulp_size_min << std::endl;
 			primary_output.request_size_bytes(gulp_size_min,
 			                                  gulp_size_min*buffer_factor);
@@ -165,13 +177,17 @@ public:
 		DEFAULT_BUFFER_FACTOR = 3
 	};
 	ConsumerTask2(std::vector<std::string> input_names,
+	              std::vector<shape_type>  input_shapes,
 	              std::vector<std::string> output_names,
 	              Pipeline*     pipeline,
 	              const Object* definition)
 		: Task(pipeline, definition),
 		  _input_names(input_names),
-		  _output_names(output_names) {
-
+		  _output_names(output_names),
+		  _input_shapes(input_shapes) {
+		
+		// *** TODO: Need to allow subclass to specify input shapes
+		
 		// Note: Subclasses can call ring->set_space and/or ring->set_shape in
 		//         their constructor to override the defaults here.
 		std::string default_output_space = "system";
@@ -180,10 +196,10 @@ public:
 			//              multiple times when trying to resolve task
 			//              dependencies. The dependency issue may need to be
 			//              re-thought.
-			try {
+			//try {
 				this->create_output(name, default_output_space);
-			}
-			catch( std::invalid_argument ) {}
+				//}
+				//catch( std::invalid_argument ) {}
 		}
 	}
 	template<int I>
@@ -200,7 +216,7 @@ protected:
 	
 	virtual void init() {
 		auto in_inds = make_index_tuple(_inputs);
-		auto in_func = init_input<inputs_type>(this, _inputs, _input_names);
+		auto in_func = init_input<inputs_type>(this, _inputs, _input_names, _input_shapes);
 		for_each(in_inds, in_func);
 		
 		auto out_inds = make_index_tuple(_outputs);
@@ -210,8 +226,8 @@ protected:
 		size_t buffer_factor = lookup_integer(params(), "buffer_factor",
 		                                      DEFAULT_BUFFER_FACTOR);
 		size_t nframe = RequestPrimarySize<ConsumerTask2,
-		                                   std::tuple_size<inputs_type>::value,
-		                                   std::tuple_size<outputs_type>::value>(this)(buffer_factor);
+		                                   (bool)std::tuple_size<inputs_type>::value,
+		                                   (bool)std::tuple_size<outputs_type>::value>(this)(buffer_factor);
 		// Now make all inputs and outputs request the same no. frames
 		// Note: Doing this twice for the primary input or output is fine
 		//transform(_inputs, request_size_frames(nframe,
@@ -240,7 +256,7 @@ protected:
 	virtual void process() = 0; // Process input buffers
 	// Called in 'advance' if input buffers were overwritten during processing
 	virtual void overwritten() {
-		this->log_error("Input data overwritten");
+		this->log().error("Input data overwritten");
 		throw std::out_of_range("Input data overwritten");
 	}
 	
@@ -297,4 +313,5 @@ private:
 	outputs_type _outputs;
 	std::vector<std::string> _input_names;
 	std::vector<std::string> _output_names;
+	std::vector<shape_type>  _input_shapes;
 };

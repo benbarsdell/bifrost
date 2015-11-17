@@ -14,6 +14,7 @@ Task* create(Pipeline*     pipeline,
 RecvUDP::RecvUDP(Pipeline*     pipeline,
                  const Object* definition)
 	: super_type({},                                       // inputs
+	             {}, // input shapes
 	             {"payloads","headers","sizes","sources"}, // outputs
 	             pipeline, definition) {
 	
@@ -33,10 +34,10 @@ RecvUDP::RecvUDP(Pipeline*     pipeline,
 }
 void RecvUDP::init() {
 	super_type::init();
-	
 	// Bind processing threads to CPU cores
 	// TODO: Just use cpu_cores.size() instead of separate ncore?
 	// TODO: Abstract this out into a base class (or something) somehow?
+	/*
 	_ncore = lookup_integer(params(), "ncore", 1);
 	auto cpu_cores = lookup_list<int>(params(), "cpu_cores", {});
 	//_ncore = std::min(_ncore, (int)cpu_cores.size());
@@ -45,13 +46,18 @@ void RecvUDP::init() {
 	for( int core=0; core<_ncore; ++core ) {
 		int tid = omp_get_thread_num();
 		if( tid == 0 ) {
-			this->log_info("Using %i cores to process packets",
+			this->log().info("Using %i cores to process packets",
 			               omp_get_num_threads());
 		}
 		if( !cpu_cores.empty() ) {
+		  std::cout << "Binding thread " << tid << " to core " << cpu_cores[tid % cpu_cores.size()] << std::endl;
 			bind_to_core(cpu_cores[tid % cpu_cores.size()]);
 		}
 	}
+	
+	//if( !cpu_cores.empty() ) {
+	//  bind_to_core(cpu_cores[0]);
+	//}
 	
 	// Initialise sockets
 	std::string addr = lookup_string(params(), "address");
@@ -67,13 +73,49 @@ void RecvUDP::init() {
 		_sockets.back().bind(Socket::address(addr, port));
 		}
 	}
-	this->log_info("Listening on udp://%s:%i", addr.c_str(), port);
-	
+	this->log().info("Listening on udp://%s:%i", addr.c_str(), port);
+	*/
 	// Initialise stats
 	stats_map& stats = _stats;
 	stats["nrecv_bytes"] = 0;
 	stats["nrecv"]       = 0;
 	stats["ndrop"]       = 0;
+}
+void RecvUDP::open() {
+  _ncore = lookup_integer(params(), "ncore", 1);
+	auto cpu_cores = lookup_list<int>(params(), "cpu_cores", {});
+	//_ncore = std::min(_ncore, (int)cpu_cores.size());
+	omp_set_num_threads(_ncore);
+#pragma omp parallel for schedule(static, 1)
+	for( int core=0; core<_ncore; ++core ) {
+		int tid = omp_get_thread_num();
+		if( tid == 0 ) {
+			this->log().info("Using %i cores to process packets",
+			               omp_get_num_threads());
+		}
+		if( !cpu_cores.empty() ) {
+		  std::cout << "Binding thread " << tid << " to core " << cpu_cores[tid % cpu_cores.size()] << std::endl;
+			bind_to_core(cpu_cores[tid % cpu_cores.size()]);
+		}
+	}
+	bind_to_core(cpu_cores[0]);
+
+	// Initialise sockets
+	std::string addr = lookup_string(params(), "address");
+	int         port = lookup_integer(params(),"port");
+#pragma omp parallel for schedule(static, 1)
+	for( int core=0; core<_ncore; ++core ) {
+		// Note: The code here is not thread safe, but calling it
+		//         in a parallel section ensures any potential
+		//         memory<->core correspondances will be applied.
+		#pragma omp critical
+		{
+		_sockets.emplace_back(SOCK_DGRAM);
+		_sockets.back().bind(Socket::address(addr, port));
+		}
+	}
+	this->log().info("Listening on udp://%s:%i", addr.c_str(), port);
+	return super_type::open();
 }
 void RecvUDP::process() {
 	stats_map& stats = _stats;
@@ -100,6 +142,7 @@ void RecvUDP::process() {
 #pragma omp parallel for schedule(static, 1)
 	for( int core=0; core<_ncore; ++core ) {
 		int tid = omp_get_thread_num();
+		//std::cout << "tid: " << tid << std::endl;
 		RingWriteBlock<char>      pkt_pylds;
 		RingWriteBlock<size_type> pkt_sizes;
 		RingWriteBlock<addr_type> pkt_addrs;
@@ -113,15 +156,15 @@ void RecvUDP::process() {
 			pkt_addrs = addrs_output.open();
 		}
 		size_t block_nframe = pkt_pylds.nframe();
-		std::cout << "Waiting for block" << std::endl;
-		std::cout << pkt_pylds.tail() << ", " << pkt_pylds.head() << std::endl;
-		std::cout << pkt_pylds.ring()->tail() << ", " << pkt_pylds.ring()->head() << std::endl;
+		//std::cout << "Waiting for block" << std::endl;
+		//std::cout << pkt_pylds.tail() << ", " << pkt_pylds.head() << std::endl;
+		//std::cout << pkt_pylds.ring()->tail() << ", " << pkt_pylds.ring()->head() << std::endl;
 		size_t npkt = _sockets[tid].recv_block(block_nframe,
 		                                       &pkt_hdrs[0],  0, &header_size,
 		                                       &pkt_pylds[0], 0, &payload_size,
 		                                       &pkt_sizes[0],
 		                                       &pkt_addrs[0]);
-		std::cout << "Received block of " << npkt << " packets" << std::endl;
+		//std::cout << "Received block of " << npkt << " packets" << std::endl;
 		
 		stats.at("nrecv_bytes") += _sockets[tid].get_recv_size();
 		stats.at("nrecv")       += npkt;
@@ -140,7 +183,7 @@ void RecvUDP::process() {
 }
 void RecvUDP::shutdown() {
 	Task::shutdown();
-	//this->log_debug("RecvUDP::shutdown");
+	//this->log().debug("RecvUDP::shutdown");
 	for( auto& socket : _sockets ) {
 		try {
 			socket.shutdown();

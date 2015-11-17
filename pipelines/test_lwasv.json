@@ -1,0 +1,70 @@
+{
+	"PORT":       4015,
+	"BCAST_PORT": 7777,
+	"CPU_CORES": [0,1,2,3,4,5],
+	"OUTPUT_FILENAME": "/data0/bifrost.dat",
+	"__pipeline__": {
+		"__name__": "ADP-Pipeline",
+		"broadcast_port": "$BCAST_PORT",
+		"__tasks__": {
+			"PacketCapture": {
+				"__class__": "std/RecvUDP",
+				"ncore":                  1,
+				"cpu_cores":        ["$CPU_CORES[0]"],
+				"address":           "p5p1",
+				"port":             "$PORT",
+				"gulp_size":      134217728,
+				"header_size":           16,
+				"payload_size_max":    4608,
+				"#payload_size_max":    5120
+			},
+			"Depacketize": {
+				"__class__": "adp/LWASV_Depacketize",
+				"__inputs__": {
+					"payloads": "PacketCapture.payloads",
+					"headers":  "PacketCapture.headers",
+					"sizes":    "PacketCapture.sizes",
+					"sources":  "PacketCapture.sources"
+				},
+				"nsource":              16,
+				"#nsource":               13,
+				"ncore":                 2,
+				"cpu_cores":         ["$CPU_CORES[1]", "$CPU_CORES[2]"],
+				"gulp_size":     134217728,
+				"buffer_factor":         8,
+				"scatter_factor":        4
+			},
+			"Reorder": {
+				"__class__": "adp/LWASV_Reorder",
+				"__inputs__": {
+					"data": "Depacketize.data"
+				},
+				"nsource":              16,
+				"nchan":               144,
+				"nstand":              256,
+				"npol":                 16,
+				"ncore":                 1,
+				"cpu_cores":         ["$CPU_CORES[3]"],
+				"#gulp_size":     134217728,
+				"gulp_nframe":        2500,
+				"buffer_factor":         4
+			},
+			"#ToDisk": {
+				"__class__": "std/FileWrite",
+				"__inputs__": {
+					"#data": "PacketCapture.payloads",
+					"#data2": "Depacketize.data",
+					"data":  "Reorder.data"
+				},
+				"cpu_cores":         ["$CPU_CORES[4]"],
+				"gulp_size":       184320000,
+				"#gulp_size":       133120000,
+				"#gulp_size2":        92160000,
+				"#buffer_factor":         100,
+				"buffer_factor":         50,
+				"filename":       "$OUTPUT_FILENAME",
+				"guarantee_reads":     true
+			}
+		}
+	}
+}
