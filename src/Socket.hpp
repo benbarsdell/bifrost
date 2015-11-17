@@ -383,7 +383,11 @@ void Socket::bind(sockaddr_storage local_address,
 	//         awkward with how this method is set up, as the user has
 	//         no way to do it themselves. However, doing it by default
 	//         is probably not a bad idea anyway.
+#ifdef SO_REUSEPORT
 	this->set_option(SO_REUSEPORT, 1);
+#else
+	#warning "Kernel version does not support SO_REUSEPORT; multithreaded send/recv will not be possible"
+#endif
 	
 	check_error(::bind(_fd, (struct sockaddr*)&local_address, sizeof(local_address)),
 	            "bind socket");
@@ -551,9 +555,10 @@ size_t Socket::recv_block(size_t            npacket,       // Max for UDP
 			_nrecv_bytes   += _msgs[m].msg_len;
 		}
 	}
-	// TODO: Does this actually work?
+	// TODO: Does this actually work? (Note: The code itself is fine).
 	// Check ancilliary data for dropped packet log (SO_RXQ_OVFL)
 	_ndropped = 0;
+	/*
 	////if( ndropped && m == 0 ) {
 	//if( m == 0 ) { // TODO: Which header is the drop count written to?
 	for( ssize_t m=0; m<nmsg; ++m ) {
@@ -567,6 +572,7 @@ size_t Socket::recv_block(size_t            npacket,       // Max for UDP
 			}
 		}
 	}
+	*/
 	return nmsg;
 }
 size_t Socket::recv_packet(void*             header_buf,
@@ -645,7 +651,8 @@ void Socket::set_default_options() {
 	this->set_option(SO_SNDBUF, DEFAULT_SOCK_BUF_SIZE);
 	this->set_option(SO_LINGER,
 	                 (struct linger){.l_onoff=1, .l_linger=DEFAULT_LINGER_SECS});
-	this->set_option(SO_RXQ_OVFL, 1); // Enable dropped packet logging
+	// TODO: Not sure if this feature actually works
+	//this->set_option(SO_RXQ_OVFL, 1); // Enable dropped packet logging
 }
 sockaddr_storage Socket::get_remote_address() /*const*/ {
 	if( _mode != Socket::MODE_CONNECTED ) {
