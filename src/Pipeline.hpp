@@ -107,6 +107,7 @@
 #include "RingBuffer.hpp"
 #include "DynLib.hpp"
 #include "ZMQSocket.hpp"
+#include "Log.hpp"
 #include "cuda/allocator.hpp"
 #include "cuda/copier.hpp"
 
@@ -128,19 +129,18 @@ public:
 	//typedef RingBuffer<uint8_t,allocator_type,copier_type> ring_type;
 	typedef RingBuffer               ring_type;
 	typedef std::shared_ptr<Task>    task_pointer;
+	typedef Logger<Pipeline>         log_type;
 	
 	Pipeline(int io_threads=3);
 	std::string name() const { return _name; }
 	void load(std::string filename, Object process_attrs=Object());
 	inline Object&       params()       { return lookup_object(_definition.get<Object>(), "__pipeline__"); }
 	inline Object const& params() const { return lookup_object(_definition.get<Object>(), "__pipeline__"); }
-	task_pointer  create_task(//std::string name,
-	                          //Object      definition,
-	                          Value       definition,
+	task_pointer  create_task(Value       definition,
 	                          bool        substitute_refs=true);
-	void          launch_task(std::string name);
-	void            stop_task(std::string name);
-	void         destroy_task(std::string name);
+	//void          launch_task(std::string name);
+	//void            stop_task(std::string name);
+	//void         destroy_task(std::string name);
 	
 	ring_type* create_ring(std::string name,
 	                       space_type  space);
@@ -152,9 +152,15 @@ public:
 	void launch();
 	void shutdown();
 	void wait();
+	inline log_type&       log()            { return _log; }
+	inline log_type const& log()      const { return _log; }
+	void broadcast(std::string topic,
+	               Object      metadata,
+	               char const* data=0,
+	               size_t      size=0) const;
 	zmq::context_t& zmq() { return _zmq_ctx; }
-	inline PUBSocket&       broadcast_socket()       { return _pubsock; }
-	inline PUBSocket const& broadcast_socket() const { return _pubsock; }
+	//inline PUBSocket&       broadcast_socket()       { return _pubsock; }
+	//inline PUBSocket const& broadcast_socket() const { return _pubsock; }
 private:
 	void init();
 	//typedef std::pair<task_pointer,cpu_core_type>  task_entry_type;
@@ -167,10 +173,11 @@ private:
 	//              destructed *after* _tasks. This is because the memory
 	//              holding the Tasks' virtual tables is released when the
 	//              corresponding dynamic library is unloaded.
-	lib_map_type  _libs;
-	ring_map_type _rings;
-	task_map_type _tasks;
-	Value         _definition;
-	zmq::context_t _zmq_ctx;
-	PUBSocket     _pubsock;
+	lib_map_type      _libs;
+	ring_map_type     _rings;
+	task_map_type     _tasks;
+	Value             _definition;
+	log_type          _log;
+	zmq::context_t    _zmq_ctx;
+	mutable PUBSocket _pubsock;
 };

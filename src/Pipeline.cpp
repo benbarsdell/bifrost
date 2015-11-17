@@ -177,7 +177,8 @@ void apply_reference_substitutions(Value& val,
 	                          "\\"+ref_prefix,
 	                          ref_prefix);
 }
-Pipeline::Pipeline(int io_threads) : _zmq_ctx(io_threads), _pubsock(_zmq_ctx) {}
+Pipeline::Pipeline(int io_threads)
+	: _log(this), _zmq_ctx(io_threads), _pubsock(_zmq_ctx) {}
 void Pipeline::load(std::string filename, Object process_attrs) {
 	std::ifstream f(filename.c_str());
 	Value document_value;
@@ -280,12 +281,22 @@ Pipeline::task_pointer Pipeline::create_task(//std::string name,
 	const char* plugins_dir_c = getenv("BIFROST_PLUGINS_DIR");
 	if( !plugins_dir_c ) {
 		plugins_dir_c = "./plugins";
-		// TODO: Add logging to Pipeline!
-		std::cout << "Warning: BIFROST_PLUGINS_DIR not set; using default of "
-		          << plugins_dir_c << std::endl;
+		this->log().warning("BIFROST_PLUGINS_DIR not set; using default of %s",
+		                    plugins_dir_c);
+		//std::cout << "Warning: BIFROST_PLUGINS_DIR not set; using default of "
+		//          << plugins_dir_c << std::endl;
 	}
 	std::string plugins_dir = plugins_dir_c;
-	std::string filename = plugins_dir + "/" + classname + ".so";
+#if __linux__
+	std::string libext = "so";
+#elif __APPLE__
+	std::string libext = "dylib";
+#elif _WIN32
+	std::string libext = "dll";
+#else
+	#error "Unknown OS; do not know dynamic library extension"
+#endif
+	std::string filename = plugins_dir + "/" + classname + "." + libext;
 	auto lib_entry = std::make_pair(classname, DynLib(filename));
 	DynLib& lib = _libs.insert(lib_entry).first->second;
 	typedef Task* (*create_func_type)(Pipeline* , Object );
@@ -304,6 +315,7 @@ Pipeline::task_pointer Pipeline::create_task(//std::string name,
 	}
 	return task;
 }
+/*
 void Pipeline::stop_task(std::string name) {
 	auto task = lookup(_tasks, name);
 	task->shutdown();
@@ -313,6 +325,7 @@ void Pipeline::destroy_task(std::string name) {
 	stop_task(name);
 	_tasks.erase(name);
 }
+*/
 Pipeline::ring_type* Pipeline::create_ring(std::string name,
                                            space_type  space) {
 	// WAR for difficulty in non-default-constructing RingBuffer into map
@@ -375,5 +388,24 @@ void Pipeline::wait() {
 	for( task_map_type::iterator t=_tasks.begin(); t!=_tasks.end(); ++t ) {
 		task_pointer task = t->second;
 		task->wait();
+	}
+}
+void Pipeline::broadcast(std::string topic,
+                         Object      metadata,
+                         char const* data,
+                         size_t      size) const {
+	topic = this->name() + "." + topic;
+	metadata["__date__"]   = Value(get_current_utc_string());
+	metadata["__time__"]   = Value((int64_t)get_current_clock_ns());
+	metadata["__period__"] = Value((int64_t)1000000000ll);
+	std::string s = topic + " " + Value(metadata).serialize();
+	bool complete = !bool(data);
+	_pubsock.send(s, complete);
+	if( data ) {
+		if( size == (size_t)-1 ) {
+			// Allow passing C-style string as data without size
+			size = std::strlen(data);
+		}
+		_pubsock.send(data, size);
 	}
 }
