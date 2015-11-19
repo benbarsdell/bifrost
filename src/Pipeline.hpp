@@ -1,5 +1,7 @@
 
 /*
+  TODO: Support optional inputs
+
   TODO: Having shutdown events propagate down the pipeline (in
           lock-step with data via RingBuffer) would allow
           partially-filled buffers (e.g., pending data) to be flushed
@@ -173,11 +175,12 @@ private:
 	//              destructed *after* _tasks. This is because the memory
 	//              holding the Tasks' virtual tables is released when the
 	//              corresponding dynamic library is unloaded.
-	lib_map_type      _libs;
-	ring_map_type     _rings;
-	task_map_type     _tasks;
-	Value             _definition;
-	log_type          _log;
-	zmq::context_t    _zmq_ctx;
-	mutable PUBSocket _pubsock;
+	lib_map_type       _libs;
+	ring_map_type      _rings;
+	task_map_type      _tasks;
+	Value              _definition;
+	log_type           _log;
+	zmq::context_t     _zmq_ctx;
+	mutable PUBSocket  _pubsock;
+	mutable std::mutex _publock;
 };

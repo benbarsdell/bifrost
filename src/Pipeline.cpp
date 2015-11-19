@@ -394,6 +394,8 @@ void Pipeline::broadcast(std::string topic,
                          Object      metadata,
                          char const* data,
                          size_t      size) const {
+	// Note: This mutex is important because zeromq is not thread-safe
+	std::lock_guard<std::mutex> lock(_publock);
 	topic = this->name() + "." + topic;
 	metadata["__date__"]   = Value(get_current_utc_string());
 	metadata["__time__"]   = Value((int64_t)get_current_clock_ns());
