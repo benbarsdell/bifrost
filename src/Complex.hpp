@@ -2,7 +2,7 @@
 /*
   Arithmetic and storage classes for complex numbers
   Ben Barsdell (2015)
-  Apache v2 license
+  BSD 3-Clause license
   
   Provides the Complex type for fp32 arithmetic
     and the ComplexFixed<N,F> type for fixed-point storage.

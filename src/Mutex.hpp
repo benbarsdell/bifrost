@@ -2,7 +2,7 @@
 /*
   Simple pthreads mutex and condition-variable wrappers
   Ben Barsdell (2015)
-  Apache v2 license
+  BSD 3-Clause license
   
   Note: Unlike the C++11 std::mutex, the pthreads-based mutex here supports
           inter-process sharing.

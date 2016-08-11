@@ -2,7 +2,7 @@
 /*
   Feature-complete RAII wrapper for CUDA stream objects
   Ben Barsdell (2015)
-  Apache v2 license
+  BSD 3-Clause license
   
   Note: According to Steven Jones's GTC2015 talk[1], streams are very cheap
           to create and destroy, so this can readily be done on-the-fly.

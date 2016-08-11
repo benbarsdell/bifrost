@@ -1,0 +1,4 @@
+# Bifrost uses the following third-party libraries:
+
+CUDA Toolkit (developer.nvidia.com/cuda-toolkit)
+ZeroMQ (zeromq.org)

@@ -2,7 +2,7 @@
 /*
   Ordered multiset object with fixed-size storage allocation on the stack
   Ben Barsdell (2015)
-  Apache v2 license
+  BSD 3-Clause license
   
   Note: This implementation has the following operation complexities:
     insert: linear

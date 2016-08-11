@@ -2,7 +2,7 @@
 /*
   Convenient socket wrapper providing efficient bulk packet tx/rx
   Ben Barsdell (2015)
-  Apache v2 license
+  BSD 3-Clause license
   
   Features: Supports UDP (SOCK_DGRAM) and TCP (SOCK_STREAM) socket types
             Supports IPv4, IPv6 and UNIX socket families

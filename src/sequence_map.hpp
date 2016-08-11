@@ -5,7 +5,7 @@
     Inserted values are assumed to apply up until the next inserted
       value in the sequence; i.e., insertions represent 'updates'.
   Ben Barsdell (2015)
-  Apache v2 license
+  BSD 3-Clause license
 
   // TODO: Better name for this?
 

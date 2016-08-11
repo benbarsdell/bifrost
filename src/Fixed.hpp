@@ -2,7 +2,7 @@
 /*
   A storage class for fixed-point values
   Ben Barsdell (2015)
-  Apache v2 license
+  BSD 3-Clause license
   
   Note: Assumes values are signed and symmetric
           E.g., 8-bit => [-127:127], not [-128:127]
