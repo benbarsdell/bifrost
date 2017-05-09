@@ -1,3 +1,8 @@
+# Bifrost has moved!
+The latest incarnation of Bifrost is now hosted here: https://github.com/ledatelescope/bifrost
+
+---
+
 # Bifrost
 
 A stream processing framework for high-throughput applications.
